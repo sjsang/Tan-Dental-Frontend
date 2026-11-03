@@ -1030,24 +1030,24 @@ export const exportKeHoachGiaoHangToExcel = async (filteredOrders, formatSingleS
   // Dòng trống 7
   worksheet.addRow([]);
 
-  // Thêm header
-  const headerRow = worksheet.addRow(['Nhận lúc', 'Số', 'Khách hàng', 'Bệnh nhân', 'Răng', 'Hẹn giao', 'Ghi chú']);
-  headerRow.eachCell((cell) => {
-    cell.font = { name: 'Arial', size: 12, bold: true };
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    applyBorder(cell, 'thin');
-  });
+  // Chiều rộng cột tính theo nội dung dài nhất của mỗi cột (xem cuối hàm)
+  const maxLenByCol = [];
+  const trackWidth = (values, scale = 1) => {
+    values.forEach((value, i) => {
+      const longestLine = Math.max(...String(value ?? '').split('\n').map((line) => line.length));
+      maxLenByCol[i] = Math.max(maxLenByCol[i] || 0, longestLine * scale);
+    });
+  };
 
-  // Cấu hình chiều rộng cột
-  worksheet.columns = [
-    { width: 18 }, // Nhận lúc
-    { width: 15 }, // Số
-    { width: 25 }, // Khách hàng
-    { width: 20 }, // Bệnh nhân
-    { width: 40 }, // Răng
-    { width: 18 }, // Hẹn giao
-    { width: 30 }  // Ghi chú
-  ];
+  const addHeaderRow = (headers) => {
+    const headerRow = worksheet.addRow(headers);
+    trackWidth(headers, 1.15); // Header in đậm cỡ 12 nên rộng hơn chữ thường
+    headerRow.eachCell((cell) => {
+      cell.font = { name: 'Arial', size: 12, bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      applyBorder(cell, 'thin');
+    });
+  };
 
   // Thêm dữ liệu — tách 1 dòng/sản phẩm
   const formatDateCustom = (dateStr) => {
@@ -1058,34 +1058,62 @@ export const exportKeHoachGiaoHangToExcel = async (filteredOrders, formatSingleS
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${pad(d.getFullYear())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  filteredOrders.forEach((order) => {
-    const maDon = order.maDonHang || `TAN${order._id.substring(order._id.length - 8).toUpperCase()}`;
-    const nhanLuc = formatDateCustom(order.ngayNhan);
-    const henGiao = formatDateCustom(order.henGiao);
-    const dssp = order.danhSachSanPham || [];
-    const products = dssp.length > 0 ? dssp : [null];
+  const addOrderRows = (orders, withLyDo) => {
+    orders.forEach((order) => {
+      const maDon = order.maDonHang || `TAN${order._id.substring(order._id.length - 8).toUpperCase()}`;
+      const nhanLuc = formatDateCustom(order.ngayNhan);
+      const henGiao = formatDateCustom(order.henGiao);
+      const dssp = order.danhSachSanPham || [];
+      const products = dssp.length > 0 ? dssp : [null];
 
-    products.forEach((sp) => {
-      const row = worksheet.addRow([
-        nhanLuc,
-        maDon,
-        order.nhaKhoa?.hoVaTen || "",
-        order.benhNhan?.hoVaTen || "",
-        formatSingleSanPham(sp),
-        henGiao,
-        order.ghiChuChung || ""
-      ]);
+      products.forEach((sp) => {
+        const values = [
+          nhanLuc,
+          maDon,
+          order.nhaKhoa?.hoVaTen || "",
+          order.benhNhan?.hoVaTen || "",
+          formatSingleSanPham(sp),
+          henGiao,
+          order.ghiChuChung || "",
+          ...(withLyDo ? [order.lyDoHenLai.trim()] : [])
+        ];
+        const row = worksheet.addRow(values);
+        trackWidth(values);
 
-      row.eachCell((cell, colNumber) => {
-        cell.font = { name: 'Arial', size: 11 };
-        cell.alignment = {
-          horizontal: colNumber === 1 || colNumber === 2 || colNumber === 6 ? 'center' : 'left',
-          vertical: 'middle',
-          wrapText: true
-        };
-        applyBorder(cell, 'thin');
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          cell.font = { name: 'Arial', size: 11 };
+          cell.alignment = {
+            horizontal: colNumber === 1 || colNumber === 2 || colNumber === 6 ? 'center' : 'left',
+            vertical: 'middle'
+          };
+          applyBorder(cell, 'thin');
+        });
       });
     });
+  };
+
+  // Tách đơn có lý do hẹn lại ra nhóm riêng
+  const donHenLai = filteredOrders.filter((o) => o.lyDoHenLai?.trim());
+  const donBinhThuong = filteredOrders.filter((o) => !o.lyDoHenLai?.trim());
+
+  const baseHeaders = ['Nhận lúc', 'Số', 'Khách hàng', 'Bệnh nhân', 'Răng', 'Hẹn giao', 'Ghi chú'];
+  addHeaderRow(baseHeaders);
+  addOrderRows(donBinhThuong, false);
+
+  if (donHenLai.length > 0) {
+    worksheet.addRow([]);
+    const sectionRow = worksheet.addRow(['Đơn hẹn lại']);
+    worksheet.mergeCells(`A${sectionRow.number}:H${sectionRow.number}`);
+    sectionRow.getCell(1).font = { name: 'Arial', size: 11, bold: true };
+    sectionRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+
+    addHeaderRow([...baseHeaders, 'Lý do hẹn']);
+    addOrderRows(donHenLai, true);
+  }
+
+  // Font Arial rộng hơn đơn vị ký tự mặc định của Excel -> nhân hệ số + chừa lề 2 ký tự
+  maxLenByCol.forEach((len, i) => {
+    worksheet.getColumn(i + 1).width = Math.ceil(len * 1.1) + 2;
   });
 
   // Xuất file

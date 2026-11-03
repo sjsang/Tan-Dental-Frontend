@@ -1301,87 +1301,113 @@ const KeHoachGiaoHangTable = () => {
                 padding: 0 !important; margin: 0 !important; box-shadow: none !important;
                 overflow: visible !important; display: block !important;
               }
-              #print-section h2 { margin: 0 0 16px 0 !important; padding: 0 !important; text-align: center !important; font-size: 20px !important; font-weight: bold !important; text-transform: uppercase !important; }
+              #print-section h2 { margin: 0 0 6px 0 !important; padding: 0 !important; text-align: center !important; font-size: 16px !important; font-weight: bold !important; text-transform: uppercase !important; }
+              #print-section h3 { margin: 10px 0 4px 0 !important; padding: 0 !important; font-size: 14px !important; }
               #print-section table { width: 100% !important; border-collapse: collapse !important; margin: 0 !important; padding: 0 !important; }
-              #print-section table td, #print-section table th { border: 1px solid black !important; padding: 8px 10px !important; font-size: 13px !important; line-height: 1.4 !important; vertical-align: middle !important; }
+              #print-section table td, #print-section table th { border: 1px solid black !important; padding: 2px 4px !important; font-size: 12px !important; line-height: 1.25 !important; vertical-align: middle !important; }
+              #print-section table tr { break-inside: avoid !important; }
+              #print-section table thead { display: table-header-group !important; }
               #print-section table th { background-color: #f3f4f6 !important; font-weight: bold !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             }
           `}</style>
           <h2 className="text-xl font-bold text-center mb-4 uppercase">
             Kế Hoạch Giao Hàng
           </h2>
-          <table className="w-full border-collapse border border-black">
-            <thead>
-              <tr>
-                {[
-                  "Nhận lúc",
-                  "Số",
-                  "Khách hàng",
-                  "Bệnh nhân",
-                  "Răng",
-                  "Hẹn giao",
-                  "Ghi chú",
-                ].map((h) => (
-                  <th
-                    key={h}
-                    className="border border-black px-2 py-1 text-center font-semibold"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(printOrders ?? filteredOrders).flatMap((order) => {
-                const dssp = order.danhSachSanPham || [];
-                const products = dssp.length > 0 ? dssp : [null];
-                const maDon =
-                  order.maDonHang ||
-                  `TAN${order._id
-                    .substring(order._id.length - 8)
-                    .toUpperCase()}`;
-                return products.map((sp, spIdx) => (
-                  <tr key={`${order._id}_${spIdx}`}>
-                    <td className="border border-black px-2 py-1 text-center">
-                      {order.ngayNhan
-                        ? format(parseISO(order.ngayNhan), "dd/MM/yyyy HH:mm")
-                        : "—"}
-                    </td>
-                    <td className="border border-black px-2 py-1 text-center font-semibold">
-                      {maDon}
-                    </td>
-                    <td className="border border-black px-2 py-1">
-                      {order.nhaKhoa?.tenGiaoDich || order.nhaKhoa?.hoVaTen}
-                    </td>
-                    <td className="border border-black px-2 py-1">
-                      {order.benhNhan?.hoVaTen}
-                    </td>
-                    <td className="border border-black px-2 py-1">
-                      {formatSingleSanPham(sp)}
-                    </td>
-                    <td className="border border-black px-2 py-1 text-center">
-                      {order.henGiao
-                        ? format(parseISO(order.henGiao), "dd/MM/yyyy HH:mm")
-                        : "—"}
-                    </td>
-                    <td className="border border-black px-2 py-1">
-                      {order.ghiChuChung}
-                    </td>
-                  </tr>
-                ));
-              })}
-              {(printOrders ?? filteredOrders).length === 0 && (
-                <tr>
-                  <td
-                    colSpan="7"
-                    className="border border-black text-center py-4"
-                  >
-                    Không có dữ liệu
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          {(() => {
+            // Đồng bộ với file Excel: đơn có lý do hẹn lại được tách ra nhóm "Đơn hẹn lại"
+            const ordersToPrint = printOrders ?? filteredOrders;
+            const donHenLai = ordersToPrint.filter((o) => o.lyDoHenLai?.trim());
+            const donBinhThuong = ordersToPrint.filter((o) => !o.lyDoHenLai?.trim());
+            const baseHeaders = ["Nhận lúc", "Số", "Khách hàng", "Bệnh nhân", "Răng", "Hẹn giao", "Ghi chú"];
+
+            const renderTable = (orders, withLyDo) => {
+              const headers = withLyDo ? [...baseHeaders, "Lý do hẹn"] : baseHeaders;
+              return (
+                <table className="w-full border-collapse border border-black">
+                  <thead>
+                    <tr>
+                      {headers.map((h) => (
+                        <th
+                          key={h}
+                          className="border border-black px-2 py-1 text-center font-semibold"
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orders.flatMap((order) => {
+                      const dssp = order.danhSachSanPham || [];
+                      const products = dssp.length > 0 ? dssp : [null];
+                      const maDon =
+                        order.maDonHang ||
+                        `TAN${order._id
+                          .substring(order._id.length - 8)
+                          .toUpperCase()}`;
+                      return products.map((sp, spIdx) => (
+                        <tr key={`${order._id}_${spIdx}`}>
+                          <td className="border border-black px-2 py-1 text-center">
+                            {order.ngayNhan
+                              ? format(parseISO(order.ngayNhan), "dd/MM/yyyy HH:mm")
+                              : "—"}
+                          </td>
+                          <td className="border border-black px-2 py-1 text-center font-semibold">
+                            {maDon}
+                          </td>
+                          <td className="border border-black px-2 py-1">
+                            {order.nhaKhoa?.tenGiaoDich || order.nhaKhoa?.hoVaTen}
+                          </td>
+                          <td className="border border-black px-2 py-1">
+                            {order.benhNhan?.hoVaTen}
+                          </td>
+                          <td className="border border-black px-2 py-1">
+                            {formatSingleSanPham(sp)}
+                          </td>
+                          <td className="border border-black px-2 py-1 text-center">
+                            {order.henGiao
+                              ? format(parseISO(order.henGiao), "dd/MM/yyyy HH:mm")
+                              : "—"}
+                          </td>
+                          <td className="border border-black px-2 py-1">
+                            {order.ghiChuChung}
+                          </td>
+                          {withLyDo && (
+                            <td className="border border-black px-2 py-1">
+                              {order.lyDoHenLai.trim()}
+                            </td>
+                          )}
+                        </tr>
+                      ));
+                    })}
+                    {orders.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={headers.length}
+                          className="border border-black text-center py-4"
+                        >
+                          Không có dữ liệu
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              );
+            };
+
+            return (
+              <>
+                {(donBinhThuong.length > 0 || donHenLai.length === 0) &&
+                  renderTable(donBinhThuong, false)}
+                {donHenLai.length > 0 && (
+                  <>
+                    <h3 className="text-lg font-bold uppercase mt-6 mb-2">Đơn hẹn lại</h3>
+                    {renderTable(donHenLai, true)}
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
 

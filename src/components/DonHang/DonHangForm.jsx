@@ -270,6 +270,10 @@ const DonHangForm = () => {
   const [yeuCauHoanThanhAnchor, setYeuCauHoanThanhAnchor] = useState(null);
   const [henGiaoAnchor, setHenGiaoAnchor] = useState(null);
 
+  // Hẹn giao ban đầu của đơn (khi sửa) để phát hiện việc dời sang ngày sau
+  const originalHenGiaoRef = useRef(null);
+  const [lyDoHenLaiModal, setLyDoHenLaiModal] = useState({ open: false, value: "" });
+
   const [formData, setFormData] = useState({
     nhaKhoa: "",
     bacSi: "",
@@ -446,6 +450,7 @@ const DonHangForm = () => {
             );
           }
 
+          originalHenGiaoRef.current = dh.henGiao ? toLocalDT(dh.henGiao) : null;
           setFormData({
             ...dh,
             nhaKhoa: dh.nhaKhoa?._id || dh.nhaKhoa,
@@ -705,7 +710,7 @@ const DonHangForm = () => {
   };
 
   const handleSave = () => {
-    if (isSubmitting) return;
+    if (isSubmitting || lyDoHenLaiModal.open) return;
     const errors = [];
 
     if (!formData.nhaKhoa) errors.push("Chưa chọn Nha Khoa");
@@ -747,10 +752,27 @@ const DonHangForm = () => {
       return;
     }
 
+    // Hẹn giao bị dời sang ngày sau so với ban đầu -> bắt buộc nhập lý do hẹn lại trước khi lưu
+    // (so sánh phần ngày "YYYY-MM-DD" của chuỗi giờ địa phương)
+    const originalHenGiao = originalHenGiaoRef.current;
+    if (
+      isEditMode &&
+      originalHenGiao &&
+      formData.henGiao.split("T")[0] > originalHenGiao.split("T")[0]
+    ) {
+      setLyDoHenLaiModal({ open: true, value: formData.lyDoHenLai || "" });
+      return;
+    }
+
+    submitDonHang();
+  };
+
+  const submitDonHang = (extraData = {}) => {
     // Convert date strings to ISO format for backend; strip read-only nhật ký from payload
     const { nhatKyChinhSua: _nk, ...formBase } = formData;
     const dataToSend = {
       ...formBase,
+      ...extraData,
       // Strip empty ObjectId fields to avoid Mongoose cast errors
       bacSi: formData.bacSi || undefined,
       ngayNhan: formData.ngayNhan ? new Date(formData.ngayNhan).toISOString() : null,
@@ -788,6 +810,17 @@ const DonHangForm = () => {
         navigate(-1);
       }
     }).catch(() => { }).finally(() => { setIsSubmitting(false); });
+  };
+
+  const handleConfirmLyDoHenLai = () => {
+    const lyDo = lyDoHenLaiModal.value.trim();
+    if (!lyDo) {
+      toast.error("Vui lòng nhập lý do hẹn lại");
+      return;
+    }
+    setLyDoHenLaiModal({ open: false, value: "" });
+    setFormData((f) => ({ ...f, lyDoHenLai: lyDo }));
+    submitDonHang({ lyDoHenLai: lyDo });
   };
 
   const handleSaveRef = useRef(null);
@@ -1705,6 +1738,48 @@ const DonHangForm = () => {
                 className="px-4 py-1.5 text-base rounded bg-blue-500 text-white hover:bg-blue-600"
               >
                 Lưu và thoát
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal nhập lý do hẹn lại khi dời Hẹn giao sang ngày sau */}
+      {lyDoHenLaiModal.open && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-xl mx-4">
+            <h3 className="font-bold text-base text-gray-800 mb-1">Lý do hẹn lại</h3>
+            <p className="text-base text-gray-600 mb-3">
+              Hẹn giao đã được dời sang{" "}
+              <strong>{dayjs(formData.henGiao).format("DD/MM/YYYY HH:mm")}</strong>. Vui lòng nhập lý do hẹn lại.
+            </p>
+            <textarea
+              autoFocus
+              rows={3}
+              value={lyDoHenLaiModal.value}
+              onChange={(e) => setLyDoHenLaiModal((m) => ({ ...m, value: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleConfirmLyDoHenLai();
+                }
+              }}
+              placeholder="VD: Nha khoa yêu cầu dời lịch, chờ vật liệu..."
+              className="w-full border border-gray-300 rounded px-3 py-2 text-base outline-none focus:border-blue-500 mb-5"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setLyDoHenLaiModal({ open: false, value: "" })}
+                className="px-4 py-1.5 text-base rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleConfirmLyDoHenLai}
+                className="px-4 py-1.5 text-base rounded bg-blue-500 text-white hover:bg-blue-600"
+              >
+                Lưu
               </button>
             </div>
           </div>
