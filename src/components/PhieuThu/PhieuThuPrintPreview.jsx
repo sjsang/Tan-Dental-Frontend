@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../config/api";
 import { numberToWords } from "../../utils/numberToWords";
@@ -9,6 +9,29 @@ const PhieuThuPrintPreview = () => {
   const [loading, setLoading] = useState(true);
   const [phieuThu, setPhieuThu] = useState(null);
   const [congTy, setCongTy] = useState(null);
+  const [shareMessage, setShareMessage] = useState("");
+  const containerRef = useRef(null);
+  const paperRef = useRef(null);
+  const [scale, setScale] = useState(1);
+  const [paperHeight, setPaperHeight] = useState(0);
+
+  // Thu nhỏ phiếu (rộng cố định 210mm) cho vừa màn hình mobile, không ảnh hưởng bản in
+  useEffect(() => {
+    const container = containerRef.current;
+    const paper = paperRef.current;
+    if (!container || !paper) return;
+
+    const updateScale = () => {
+      setScale(Math.min(1, container.clientWidth / paper.offsetWidth));
+      setPaperHeight(paper.offsetHeight);
+    };
+
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(container);
+    observer.observe(paper);
+    return () => observer.disconnect();
+  }, [phieuThu]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -78,6 +101,50 @@ const PhieuThuPrintPreview = () => {
   const printDate = phieuThu.ngayThu || phieuThu.ngayTao || new Date();
   const soTienText = numberToWords(phieuThu.soTienThu);
 
+  const showShareMessage = (msg) => {
+    setShareMessage(msg);
+    setTimeout(() => setShareMessage(""), 2500);
+  };
+
+  const copyLink = async (url) => {
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Fallback cho trình duyệt không hỗ trợ Clipboard API (HTTP, trình duyệt cũ)
+      const input = document.createElement("textarea");
+      input.value = url;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+    }
+    showShareMessage("Đã sao chép liên kết");
+  };
+
+  // Máy tính (Windows/macOS) cũng hỗ trợ navigator.share nên phải nhận diện mobile riêng
+  const isMobile =
+    navigator.userAgentData?.mobile ??
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const canNativeShare = isMobile && !!navigator.share;
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    // Trên mobile, navigator.share mở bảng chia sẻ hệ thống (Zalo, Messenger, Facebook...)
+    if (canNativeShare) {
+      try {
+        await navigator.share({
+          title: `Phiếu thu ${maPhieuThu}`,
+          text: `Phiếu thu ${maPhieuThu} - ${formatCurrency(phieuThu.soTienThu)} đ`,
+          url,
+        });
+        return;
+      } catch (err) {
+        if (err?.name === "AbortError") return;
+      }
+    }
+    await copyLink(url);
+  };
+
   return (
     <div className="min-h-screen bg-gray-200">
       <div className="h-10 bg-[#00a8ff] flex justify-between items-center px-4">
@@ -91,7 +158,16 @@ const PhieuThuPrintPreview = () => {
       </div>
 
       <div className="flex flex-col items-center py-6 px-4">
-        <div className="print-area bg-white shadow-lg border border-gray-300" style={{ width: "210mm", fontFamily: "Cambria", padding: "10mm", display: "flex", flexDirection: "column" }}>
+        <div
+          ref={containerRef}
+          className="print-container"
+          style={{ width: "100%", maxWidth: "210mm", height: paperHeight ? paperHeight * scale : "auto" }}
+        >
+        <div
+          className="print-scale"
+          style={{ width: "210mm", transform: `scale(${scale})`, transformOrigin: "top left" }}
+        >
+        <div ref={paperRef} className="print-area bg-white shadow-lg border border-gray-300" style={{ width: "210mm", fontFamily: "Cambria", padding: "10mm", display: "flex", flexDirection: "column" }}>
           {/* Header */}
           <div style={{ marginBottom: "6mm" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "3mm" }}>
@@ -176,14 +252,27 @@ const PhieuThuPrintPreview = () => {
             ))}
           </div>
         </div>
+        </div>
+        </div>
 
-        {/* Print Button */}
-        <button
-          onClick={() => window.print()}
-          className="mt-4 px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          In phiếu thu
-        </button>
+        {/* Print & Share Buttons */}
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={() => window.print()}
+            className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            In phiếu thu
+          </button>
+          <button
+            onClick={handleShare}
+            className="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            {canNativeShare ? "Chia sẻ" : "Sao chép liên kết"}
+          </button>
+        </div>
+        {shareMessage && (
+          <div className="mt-2 text-sm text-green-700">{shareMessage}</div>
+        )}
       </div>
 
       <style>{`
@@ -195,6 +284,7 @@ const PhieuThuPrintPreview = () => {
             overflow: hidden !important;
           }
           body * { visibility: hidden; }
+          .print-scale { transform: none !important; }
           .print-area, .print-area * { visibility: visible; }
           .print-area {
             position: fixed !important;
